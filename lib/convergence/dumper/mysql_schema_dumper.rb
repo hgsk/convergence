@@ -140,6 +140,7 @@ class Convergence::Dumper::MysqlSchemaDumper
     end
     options.merge!(extra: column['EXTRA']) unless column['EXTRA'].empty?
     options.merge!(comment: column['COLUMN_COMMENT']) unless column['COLUMN_COMMENT'].empty?
+    options.merge!(unsigned: true) unless column['COLUMN_TYPE'].scan(/unsigned/).empty?
     [data_type, column_name, options]
   end
 

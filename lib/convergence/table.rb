@@ -20,6 +20,12 @@ class Convergence::Table
     tinyint(column_name, options.merge(limit: 1))
   end
 
+
+  def uint(column_name, options = {})
+    options[:unsigned] = true
+    int(column_name, options)
+  end
+
   def index(index_columns, options = {})
     index_name = options[:name]
     index_name = "index_#{table_name}_on_#{[index_columns].flatten.join('_')}" if index_name.nil?
