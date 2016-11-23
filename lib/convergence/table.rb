@@ -1,5 +1,5 @@
 class Convergence::Table
-  attr_accessor :table_name, :table_options, :columns, :indexes, :foreign_keys
+  attr_accessor :table_name, :table_options, :columns, :indexes, :foreign_keys, :partitions
 
   Convergence::Column::COLUMN_TYPE.each do |column_type|
     define_method "#{column_type}" do |column_name, options = {}|
@@ -32,6 +32,10 @@ class Convergence::Table
     @indexes[index_name] = Convergence::Index.new(index_name, index_columns, options)
   end
 
+  def partition(type, partition_column, records)
+    @partitions[partition_column] = {type: type, records: records}
+  end
+
   def foreign_key(key_columns, options = {})
     if options[:reference].nil? || options[:reference_column].nil?
       fail ArgumentError.new("#{@table_name} - #{key_columns}: require reference/reference_column parameters")
@@ -52,5 +56,6 @@ class Convergence::Table
     @columns = {}
     @indexes = {}
     @foreign_keys = {}
+    @partitions = {}
   end
 end
