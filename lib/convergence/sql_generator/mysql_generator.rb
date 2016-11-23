@@ -126,7 +126,8 @@ class SQLGenerator::MysqlGenerator < SQLGenerator
       <<-SQL
 CREATE TABLE `#{table_name}` (
   #{column_sql}
-) #{create_table_option_sql(table)};
+) #{create_table_option_sql(table)}
+  #{create_table_partition_sql(table)};
       SQL
     end
   end
@@ -222,5 +223,19 @@ DROP TABLE `#{table_name}`;
         "#{key}=#{v}"
       end
     end.join(' ')
+  end
+
+
+  def create_table_partition_sql(table)
+   table.partitions.map do |k, v|
+     sql = ""
+     if "list" == v[:type].to_s.downcase
+        sql += "PARTITION BY LIST(#{k.to_s}) (\n  "
+        sql += v[:records].map do |pk, pv|
+          "  PARTITION #{pk} VALUES IN (#{pv.join(', ')})"
+        end.join(",\n  ")
+        sql += "\n  )"
+     end
+   end.join(' ')
   end
 end
