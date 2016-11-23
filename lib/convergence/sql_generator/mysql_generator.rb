@@ -40,9 +40,7 @@ class SQLGenerator::MysqlGenerator < SQLGenerator
       table_delta[:add_column].each do |_column_name, column|
         results << alter_add_column_sql(table_name, column)
       end
-      table_delta[:change_column].each do |column_name, column|
-        results << alter_change_column_sql(table_name, column_name, column, to_table)
-      end
+      results << alter_change_column_sql(table_name, table_delta[:change_column], to_table)
       table_delta[:add_index].each do |_index_name, index|
         results << alter_add_index_sql(table_name, index)
       end
@@ -64,20 +62,53 @@ class SQLGenerator::MysqlGenerator < SQLGenerator
     %(ALTER TABLE `#{table_name}` DROP COLUMN `#{column.column_name}`;)
   end
 
-  def alter_change_column_sql(table_name, column_name, change_column_option, to_table)
-    column = to_table[table_name].columns[column_name]
-    column.options.merge!(after: change_column_option[:after]) unless change_column_option[:after].nil?
-    sql = ""
-    original_column = original_table[table_name].columns[column_name]
-    if original_column.options[:primary_key]
-      extra = original_column.options[:extra]
-      if extra && extra.upcase.include?('AUTO_INCREMENT')
-        sql += %(ALTER TABLE `#{table_name}` MODIFY COLUMN #{create_column_sql(original_column, output_auto_increment: false)};\n)
-      end
-      sql += %(ALTER TABLE `#{table_name}` DROP PRIMARY KEY;\n)
+  def alter_change_column_sql(table_name, table_delta, to_table)
+    sql = alter_change_primary_column_sql(table_name, table_delta, to_table)
+    sql += "ALTER TABLE `#{table_name}`"
+    sqls = []
+    primary_keys = []
+    table_delta.each do |column_name, change_column_option|
+      column = to_table[table_name].columns[column_name]
+      column.options.merge!(after: change_column_option[:after]) unless change_column_option[:after].nil?
+      original_column = original_table[table_name].columns[column_name]
+      sqls << %( MODIFY COLUMN #{create_column_sql(column, output_primary_key: false)})
     end
-    sql += %(ALTER TABLE `#{table_name}` MODIFY COLUMN #{create_column_sql(column, output_primary_key: true)};)
-    sql
+    sql + sqls.join(",\n") + ";"
+  end
+
+  def alter_change_primary_column_sql(table_name, table_delta, to_table)
+    sql = "ALTER TABLE `#{table_name}`"
+    sqls = []
+    primary_keys = []
+    is_rebuild_primary_key = false
+    table_delta.each do |column_name, change_column_option|
+      column = to_table[table_name].columns[column_name]
+      column.options.merge!(after: change_column_option[:after]) unless change_column_option[:after].nil?
+      original_column = original_table[table_name].columns[column_name]
+      if original_column.options[:primary_key]
+        extra = original_column.options[:extra]
+        if extra && extra.upcase.include?('AUTO_INCREMENT')
+          sqls << %( MODIFY COLUMN #{create_column_sql(original_column, output_auto_increment: false)})
+        end
+        is_rebuild_primary_key = true
+      end
+    end
+
+    return '' unless is_rebuild_primary_key
+
+    if is_rebuild_primary_key
+      sqls << %( DROP PRIMARY KEY)
+      to_table[table_name].columns.each do |key, column|
+        if column.options[:primary_key]
+          primary_keys << key
+        end
+      end
+      unless primary_keys.empty?
+          primary_keys += to_table[table_name].partitions.keys.map {|k| k.to_s }
+          sqls << %( ADD PRIMARY KEY (`#{primary_keys.uniq.join('`,`')}`))
+      end
+    end
+    sql + sqls.join(",\n") + ";"
   end
 
   def alter_change_table_sql(table_name, change_table_option)
