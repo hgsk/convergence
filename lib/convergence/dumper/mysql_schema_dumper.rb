@@ -9,11 +9,13 @@ class Convergence::Dumper::MysqlSchemaDumper
     table_definitions = select_table_definitions(@target_database)
     column_definitions = select_column_definitions(@target_database).group_by { |r| r['TABLE_NAME'] }
     index_definitions = select_index_definitions(@target_database).group_by { |r| r['TABLE_NAME'] }
+    partition_definitions = select_partition_definitions(@target_database).group_by { |r| r['TABLE_NAME'] }
     table_definitions.map { |r| r['TABLE_NAME'] }.each do |table_name|
       table = Convergence::Table.new(table_name)
       parse_table_options(table, table_definitions.find { |r| r['TABLE_NAME'] == table_name })
       parse_columns(table, column_definitions[table_name])
       parse_indexes(table, index_definitions[table_name])
+      parse_partitions(table, partition_definitions[table_name])
       @tables[table_name] = table
     end
     @tables
@@ -101,6 +103,14 @@ class Convergence::Dumper::MysqlSchemaDumper
         )
     ")
   end
+  def select_partition_definitions(database_name)
+    mysql.query("
+     SELECT TABLE_SCHEMA, TABLE_NAME, PARTITION_NAME, PARTITION_ORDINAL_POSITION, TABLE_ROWS, PARTITION_METHOD, PARTITION_EXPRESSION, PARTITION_DESCRIPTION
+      FROM PARTITIONS
+      WHERE TABLE_SCHEMA = '#{mysql.escape(database_name)}'
+      ORDER BY TABLE_NAME, PARTITION_ORDINAL_POSITION
+    ")
+  end
 
   def parse_table_options(table, table_option)
     option = {}
@@ -172,6 +182,19 @@ class Convergence::Dumper::MysqlSchemaDumper
       else
         fail NotImplementedError.new('Unknown index type')
       end
+    end
+  end
+
+
+  def parse_partitions(table, table_partitions)
+    return if table_partitions.first['PARTITION_EXPRESSION'].nil?
+    table_partitions.group_by { |r| r['PARTITION_EXPRESSION'] }.each do |column_name, partitions|
+      records = {}
+      type = partitions.first['PARTITION_METHOD'].downcase
+      partitions.group_by {|r| r['PARTITION_NAME'] }.each do |key, partition|
+        records[key] = partition.map {|r| r['PARTITION_DESCRIPTION']}
+      end
+      table.partition(type, column_name, records)
     end
   end
 end
